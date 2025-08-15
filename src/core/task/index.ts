@@ -796,6 +796,12 @@ export class Task {
 					// await this.postStateToWebview()
 					const protoMessage = convertClineMessageToProto(lastMessage)
 					await sendPartialMessageEvent(protoMessage)
+
+					// Broadcast final message state for collaboration when partial message is completed
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					if (collaborativeManager.isCollaborationActive()) {
+						await collaborativeManager.broadcastChatMessage(lastMessage)
+					}
 				} else {
 					// this is a new partial=false message, so add it like normal
 					this.taskState.askResponse = undefined

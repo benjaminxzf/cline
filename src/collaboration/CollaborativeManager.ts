@@ -155,7 +155,7 @@ export class CollaborativeManager {
 				} else if (stateData.clineMessage) {
 					// Individual message update - apply directly to UI
 					console.log("[CollaborativeManager] Applying individual message from primary")
-					this.applyMessageFromPrimary(stateData.clineMessage)
+					this.applyMessageFromPrimary(stateData.clineMessage, stateData)
 				} else {
 					// Delta update - need current state to apply
 					console.log("[CollaborativeManager] Received delta, requesting current state for application")
@@ -323,16 +323,31 @@ export class CollaborativeManager {
 			return
 		}
 
+		// Get current task state to include in broadcast
+		const controller = this.getController()
+		const currentTaskState = controller?.task?.taskState
+			? {
+					isStreaming: controller.task.taskState.isStreaming,
+					isWaitingForFirstChunk: controller.task.taskState.isWaitingForFirstChunk,
+					didCompleteReadingStream: controller.task.taskState.didCompleteReadingStream,
+					isAwaitingPlanResponse: controller.task.taskState.isAwaitingPlanResponse,
+					askResponse: controller.task.taskState.askResponse,
+					askResponseText: controller.task.taskState.askResponseText,
+					lastMessageTs: controller.task.taskState.lastMessageTs,
+				}
+			: null
+
 		console.log("[CollaborativeManager] Sending broadcast message:", {
 			type: "chat_message",
 			clineMessage: message,
 			content: (message.text || "").substring(0, 100),
 			messageType: message.type || "say",
 			say: message.say,
+			taskState: currentTaskState,
 			timestamp: Date.now(),
 		})
 
-		// Broadcast full state including the new message
+		// Broadcast full state including the new message and task state
 		this.collaborationClient.broadcastFullState({
 			type: "chat_message",
 			clineMessage: message,
@@ -340,6 +355,7 @@ export class CollaborativeManager {
 			messageType: message.type || "say",
 			say: message.say,
 			ask: message.ask,
+			taskState: currentTaskState,
 			timestamp: Date.now(),
 			fromUserId: this.currentUserId,
 			fromUserName: this.getCurrentUserName(),
@@ -400,7 +416,7 @@ export class CollaborativeManager {
 	/**
 	 * Applies a message from the primary instance to the secondary instance
 	 */
-	private async applyMessageFromPrimary(message: any): Promise<void> {
+	private async applyMessageFromPrimary(message: any, stateData?: any): Promise<void> {
 		console.log("[CollaborativeManager] Applying message from primary to secondary UI:", {
 			messageType: message.type || message.say,
 			text: (message.text || "").substring(0, 100),
@@ -468,7 +484,26 @@ export class CollaborativeManager {
 				// Add the message to the task's message state
 				await currentTask.messageStateHandler.addToClineMessages(message)
 
-				// Update the webview with the new message
+				// Apply task state if provided by the primary instance
+				if (stateData?.taskState && currentTask.taskState) {
+					console.log("[CollaborativeManager] Applying task state from primary:", {
+						isStreaming: stateData.taskState.isStreaming,
+						isWaitingForFirstChunk: stateData.taskState.isWaitingForFirstChunk,
+						didCompleteReadingStream: stateData.taskState.didCompleteReadingStream,
+						isAwaitingPlanResponse: stateData.taskState.isAwaitingPlanResponse,
+					})
+
+					// Synchronize critical task state properties
+					currentTask.taskState.isStreaming = stateData.taskState.isStreaming ?? false
+					currentTask.taskState.isWaitingForFirstChunk = stateData.taskState.isWaitingForFirstChunk ?? false
+					currentTask.taskState.didCompleteReadingStream = stateData.taskState.didCompleteReadingStream ?? false
+					currentTask.taskState.isAwaitingPlanResponse = stateData.taskState.isAwaitingPlanResponse ?? false
+					currentTask.taskState.askResponse = stateData.taskState.askResponse
+					currentTask.taskState.askResponseText = stateData.taskState.askResponseText
+					currentTask.taskState.lastMessageTs = stateData.taskState.lastMessageTs
+				}
+
+				// Update the webview with the new message and synchronized state
 				await currentTask.postStateToWebview()
 
 				// Reset the collaboration flag
@@ -476,7 +511,7 @@ export class CollaborativeManager {
 					controller.isUpdatingFromCollaboration = false
 				}
 
-				console.log("[CollaborativeManager] ✅ Successfully applied message to task UI")
+				console.log("[CollaborativeManager] ✅ Successfully applied message and task state to task UI")
 			} else {
 				console.log("[CollaborativeManager] Task exists but no message state handler available")
 			}
