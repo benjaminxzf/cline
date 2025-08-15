@@ -23,6 +23,7 @@ import { vscodeHostBridgeClient } from "@/hosts/vscode/hostbridge/client/host-gr
 import { readTextFromClipboard, writeTextToClipboard } from "@/utils/env"
 import type { ExtensionContext } from "vscode"
 import { initialize, tearDown } from "./common"
+import { CollaborativeManager } from "./collaboration"
 import { addToCline } from "./core/controller/commands/addToCline"
 import { explainWithCline } from "./core/controller/commands/explainWithCline"
 import { fixWithCline } from "./core/controller/commands/fixWithCline"
@@ -54,6 +55,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	const sidebarWebview = (await initialize(context)) as VscodeWebviewProvider
 
 	Logger.log("Cline extension activated")
+
+	// Initialize collaborative features
+	const collaborativeManager = CollaborativeManager.getInstance()
+	await collaborativeManager.initialize()
+	context.subscriptions.push({ dispose: () => collaborativeManager.dispose() })
 
 	const testModeWatchers = await initializeTestMode(sidebarWebview)
 	// Initialize test mode and add disposables to context

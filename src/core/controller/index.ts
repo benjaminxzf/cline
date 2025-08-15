@@ -30,6 +30,7 @@ import { ensureMcpServersDirectoryExists, ensureSettingsDirectoryExists, GlobalF
 import { Task } from "../task"
 import { sendMcpMarketplaceCatalogEvent } from "./mcp/subscribeToMcpMarketplaceCatalog"
 import { sendStateUpdate } from "./state/subscribeToState"
+import { CollaborativeManager } from "../../collaboration/CollaborativeManager"
 
 /*
 https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
@@ -46,6 +47,8 @@ export class Controller {
 	accountService: ClineAccountService
 	authService: AuthService
 	readonly cacheService: CacheService
+	private collaborativeManager: CollaborativeManager
+	private isUpdatingFromCollaboration = false
 
 	constructor(
 		readonly context: vscode.ExtensionContext,
@@ -97,10 +100,172 @@ export class Controller {
 		cleanupLegacyCheckpoints(this.context.globalStorageUri.fsPath).catch((error) => {
 			console.error("Failed to cleanup legacy checkpoints:", error)
 		})
+
+		// Initialize collaborative features
+		this.collaborativeManager = CollaborativeManager.getInstance()
+		this.setupCollaborativeSync()
 	}
 
 	async getCurrentMode(): Promise<Mode> {
 		return this.cacheService.getGlobalStateKey("mode")
+	}
+
+	/**
+	 * Sets up collaborative state synchronization
+	 */
+	private setupCollaborativeSync(): void {
+		// Listen for state updates from other participants
+		this.collaborativeManager.onStateChange(async (incomingState) => {
+			if (this.isUpdatingFromCollaboration) {
+				// Prevent infinite loops when syncing state
+				return
+			}
+
+			try {
+				console.log("[Cline Collaborative] Received state update from another participant")
+				this.isUpdatingFromCollaboration = true
+
+				// Apply incoming state to this instance
+				await this.applyCollaborativeState(incomingState)
+
+				// Update webview with new state (but don't broadcast back)
+				await this.postStateToWebviewInternal()
+			} catch (error) {
+				console.error("[Cline Collaborative] Failed to apply incoming state:", error)
+			} finally {
+				this.isUpdatingFromCollaboration = false
+			}
+		})
+	}
+
+	/**
+	 * Applies collaborative state from another participant
+	 */
+	private async applyCollaborativeState(incomingState: any): Promise<void> {
+		if (!incomingState?.state) return
+
+		const state = incomingState.state
+		console.log("[Cline Collaborative] Applying state:", Object.keys(state))
+
+		// Apply critical collaborative state updates
+		if (state.taskHistory) {
+			this.cacheService.setGlobalState("taskHistory", state.taskHistory)
+		}
+
+		if (state.currentTaskItem && state.clineMessages) {
+			// If there's an active task with messages, we need to sync the entire conversation
+			await this.syncCurrentTask(state.currentTaskItem, state.clineMessages, state.currentFocusChainChecklist)
+		}
+
+		if (state.mode) {
+			this.cacheService.setGlobalState("mode", state.mode)
+		}
+
+		// Apply other relevant state
+		if (state.autoApprovalSettings) {
+			this.cacheService.setGlobalState("autoApprovalSettings", state.autoApprovalSettings)
+		}
+	}
+
+	/**
+	 * Syncs the current active task with another participant's state
+	 */
+	private async syncCurrentTask(currentTaskItem: any, clineMessages: any[], currentFocusChainChecklist: any): Promise<void> {
+		if (!currentTaskItem) {
+			// Clear current task if none is active
+			if (this.task) {
+				await this.clearTask()
+			}
+			return
+		}
+
+		// If we don't have the same task ID or our task is different, restart with synced state
+		if (!this.task || this.task.taskId !== currentTaskItem.id) {
+			console.log("[Cline Collaborative] Syncing to different task:", currentTaskItem.id)
+
+			// Clear current task
+			if (this.task) {
+				await this.clearTask()
+			}
+
+			// Start task with synced history
+			if (currentTaskItem.task && clineMessages.length > 0) {
+				// Recreate task from synced state
+				await this.recreateTaskFromSyncedState(currentTaskItem, clineMessages, currentFocusChainChecklist)
+			}
+		} else if (this.task && clineMessages.length > 0) {
+			// Same task ID, sync the messages
+			console.log("[Cline Collaborative] Syncing messages for task:", currentTaskItem.id)
+			this.task.messageStateHandler.setClineMessages(clineMessages)
+
+			if (currentFocusChainChecklist) {
+				this.task.taskState.currentFocusChainChecklist = currentFocusChainChecklist
+			}
+		}
+	}
+
+	/**
+	 * Recreates a task from synced collaborative state
+	 */
+	private async recreateTaskFromSyncedState(taskItem: any, clineMessages: any[], focusChainChecklist: any): Promise<void> {
+		try {
+			// Get current API configuration and mode
+			const apiConfiguration = this.cacheService.getApiConfiguration()
+			const mode = await this.getCurrentMode()
+
+			// Create new task with synced content using the correct constructor
+			const autoApprovalSettings = this.cacheService.getGlobalStateKey("autoApprovalSettings")
+			const browserSettings = this.cacheService.getGlobalStateKey("browserSettings")
+			const focusChainSettings = this.cacheService.getGlobalStateKey("focusChainSettings")
+			const preferredLanguage = this.cacheService.getGlobalStateKey("preferredLanguage")
+			const openaiReasoningEffort = this.cacheService.getGlobalStateKey("openaiReasoningEffort")
+			const strictPlanModeEnabled = this.cacheService.getGlobalStateKey("strictPlanModeEnabled")
+			const shellIntegrationTimeout = this.cacheService.getGlobalStateKey("shellIntegrationTimeout")
+			const terminalReuseEnabled = this.cacheService.getGlobalStateKey("terminalReuseEnabled")
+			const terminalOutputLineLimit = this.cacheService.getGlobalStateKey("terminalOutputLineLimit")
+			const defaultTerminalProfile = this.cacheService.getGlobalStateKey("defaultTerminalProfile")
+			const enableCheckpointsSetting = this.cacheService.getGlobalStateKey("enableCheckpointsSetting")
+
+			this.task = new Task(
+				this,
+				this.mcpHub,
+				(historyItem: HistoryItem) => this.updateTaskHistory(historyItem),
+				() => this.postStateToWebview(),
+				(taskId: string) => this.reinitExistingTaskFromId(taskId),
+				() => this.cancelTask(),
+				apiConfiguration,
+				autoApprovalSettings,
+				browserSettings,
+				focusChainSettings,
+				preferredLanguage,
+				openaiReasoningEffort,
+				mode,
+				strictPlanModeEnabled ?? false,
+				shellIntegrationTimeout,
+				terminalReuseEnabled ?? true,
+				terminalOutputLineLimit ?? 500,
+				defaultTerminalProfile ?? "default",
+				enableCheckpointsSetting ?? true,
+				await getCwd(getDesktopDir()),
+				this.cacheService,
+				taskItem.task, // Use the task content from history
+				[], // images
+				[], // files
+				taskItem, // Use the full history item
+			)
+
+			// Sync the message history
+			this.task.messageStateHandler.setClineMessages(clineMessages)
+
+			// Sync focus chain checklist
+			if (focusChainChecklist) {
+				this.task.taskState.currentFocusChainChecklist = focusChainChecklist
+			}
+
+			console.log("[Cline Collaborative] Successfully recreated task from synced state")
+		} catch (error) {
+			console.error("[Cline Collaborative] Failed to recreate task from synced state:", error)
+		}
 	}
 
 	/*
@@ -566,6 +731,19 @@ export class Controller {
 	}
 
 	async postStateToWebview() {
+		const state = await this.getStateToPostToWebview()
+		await sendStateUpdate(this.id, state)
+
+		// Broadcast state to collaborative participants (only if not updating from collaboration)
+		if (!this.isUpdatingFromCollaboration && this.collaborativeManager.isCollaborationActive()) {
+			await this.collaborativeManager.broadcastStateUpdate(state)
+		}
+	}
+
+	/**
+	 * Internal method to update webview without broadcasting to collaborators
+	 */
+	private async postStateToWebviewInternal() {
 		const state = await this.getStateToPostToWebview()
 		await sendStateUpdate(this.id, state)
 	}
