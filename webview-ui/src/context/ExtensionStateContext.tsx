@@ -268,6 +268,17 @@ export const ExtensionStateContextProvider: React.FC<{
 				if (response.stateJson) {
 					try {
 						const stateData = JSON.parse(response.stateJson) as ExtensionState
+
+						// Check if this is a collaborative state update
+						const isCollaborativeUpdate = (stateData as any)._isCollaborativeUpdate
+						if (isCollaborativeUpdate) {
+							console.log("[ExtensionStateContext] Received collaborative state update", {
+								messagesCount: stateData.clineMessages?.length || 0,
+								mode: stateData.mode,
+								fromUser: (stateData as any)._fromUser,
+							})
+						}
+
 						setState((prevState) => {
 							// Versioning logic for autoApprovalSettings
 							const incomingVersion = stateData.autoApprovalSettings?.version ?? 1
@@ -285,7 +296,13 @@ export const ExtensionStateContextProvider: React.FC<{
 							setShowWelcome(!newState.welcomeViewCompleted)
 							setDidHydrateState(true)
 
-							console.log("[DEBUG] returning new state in ESC")
+							if (isCollaborativeUpdate) {
+								console.log(
+									"[ExtensionStateContext] Applied collaborative state update - UI will reflect remote changes",
+								)
+							} else {
+								console.log("[DEBUG] returning new state in ESC")
+							}
 
 							return newState
 						})

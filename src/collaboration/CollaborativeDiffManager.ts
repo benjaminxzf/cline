@@ -111,10 +111,11 @@ export class CollaborativeDiffManager {
 
 		// Group decorations by file
 		diffs.forEach((diff) => {
-			if (!decorationsByFile.has(diff.filePath)) {
-				decorationsByFile.set(diff.filePath, [])
+			const filePath = diff.filePath || "unknown-file"
+			if (!decorationsByFile.has(filePath)) {
+				decorationsByFile.set(filePath, [])
 			}
-			decorationsByFile.get(diff.filePath)!.push(diff)
+			decorationsByFile.get(filePath)!.push(diff)
 		})
 
 		// Apply decorations to each file

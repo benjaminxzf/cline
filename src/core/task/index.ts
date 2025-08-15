@@ -754,13 +754,20 @@ export class Task {
 					// this.askResponseImages = undefined
 					askTs = Date.now()
 					this.taskState.lastMessageTs = askTs
-					await this.messageStateHandler.addToClineMessages({
+					const newAskMessage = {
 						ts: askTs,
-						type: "ask",
+						type: "ask" as const,
 						ask: type,
 						text,
 						partial,
-					})
+					}
+					await this.messageStateHandler.addToClineMessages(newAskMessage)
+
+					// Broadcast ask message immediately for real-time collaboration
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					if (collaborativeManager.isCollaborationActive()) {
+						await collaborativeManager.broadcastChatMessage(newAskMessage)
+					}
 					await this.postStateToWebview()
 					throw new Error("Current ask promise was ignored 2")
 				}
@@ -797,12 +804,19 @@ export class Task {
 					this.taskState.askResponseFiles = undefined
 					askTs = Date.now()
 					this.taskState.lastMessageTs = askTs
-					await this.messageStateHandler.addToClineMessages({
+					const newAskMessage = {
 						ts: askTs,
-						type: "ask",
+						type: "ask" as const,
 						ask: type,
 						text,
-					})
+					}
+					await this.messageStateHandler.addToClineMessages(newAskMessage)
+
+					// Broadcast ask message immediately for real-time collaboration
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					if (collaborativeManager.isCollaborationActive()) {
+						await collaborativeManager.broadcastChatMessage(newAskMessage)
+					}
 					await this.postStateToWebview()
 				}
 			}
@@ -815,12 +829,19 @@ export class Task {
 			this.taskState.askResponseFiles = undefined
 			askTs = Date.now()
 			this.taskState.lastMessageTs = askTs
-			await this.messageStateHandler.addToClineMessages({
+			const newAskMessage = {
 				ts: askTs,
-				type: "ask",
+				type: "ask" as const,
 				ask: type,
 				text,
-			})
+			}
+			await this.messageStateHandler.addToClineMessages(newAskMessage)
+
+			// Broadcast ask message immediately for real-time collaboration
+			const collaborativeManager = this.controller.getCollaborativeManager()
+			if (collaborativeManager.isCollaborationActive()) {
+				await collaborativeManager.broadcastChatMessage(newAskMessage)
+			}
 			await this.postStateToWebview()
 		}
 
@@ -851,6 +872,8 @@ export class Task {
 	}
 
 	async say(type: ClineSay, text?: string, images?: string[], files?: string[], partial?: boolean): Promise<undefined> {
+		console.log("[Task.say] Starting say method", { type, text: text?.substring(0, 100), partial })
+
 		if (this.taskState.abort) {
 			throw new Error("Cline instance aborted")
 		}
@@ -861,31 +884,56 @@ export class Task {
 				lastMessage && lastMessage.partial && lastMessage.type === "say" && lastMessage.say === type
 			if (partial) {
 				if (isUpdatingPreviousPartial) {
+					console.log("[Task.say] Updating existing partial message")
 					// existing partial message, so update it
 					lastMessage.text = text
 					lastMessage.images = images
 					lastMessage.files = files
 					lastMessage.partial = partial
+
+					// Broadcast updated message immediately for real-time collaboration
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					console.log("[Task.say] Checking collaboration status:", collaborativeManager.isCollaborationActive())
+					if (collaborativeManager.isCollaborationActive()) {
+						console.log("[Task.say] Broadcasting partial message update")
+						await collaborativeManager.broadcastChatMessage(lastMessage)
+					}
+
 					const protoMessage = convertClineMessageToProto(lastMessage)
 					await sendPartialMessageEvent(protoMessage)
 				} else {
+					console.log("[Task.say] Creating new partial message")
 					// this is a new partial message, so add it with partial state
 					const sayTs = Date.now()
 					this.taskState.lastMessageTs = sayTs
-					await this.messageStateHandler.addToClineMessages({
+					const newMessage = {
 						ts: sayTs,
-						type: "say",
+						type: "say" as const,
 						say: type,
 						text,
 						images,
 						files,
 						partial,
-					})
+					}
+					await this.messageStateHandler.addToClineMessages(newMessage)
+
+					// Broadcast message immediately for real-time collaboration
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					console.log(
+						"[Task.say] Checking collaboration status for new partial:",
+						collaborativeManager.isCollaborationActive(),
+					)
+					if (collaborativeManager.isCollaborationActive()) {
+						console.log("[Task.say] Broadcasting new partial message")
+						await collaborativeManager.broadcastChatMessage(newMessage)
+					}
+
 					await this.postStateToWebview()
 				}
 			} else {
 				// partial=false means its a complete version of a previously partial message
 				if (isUpdatingPreviousPartial) {
+					console.log("[Task.say] Completing previously partial message")
 					// this is the complete version of a previously partial message, so replace the partial with the complete version
 					this.taskState.lastMessageTs = lastMessage.ts
 					// lastMessage.ts = sayTs
@@ -894,38 +942,77 @@ export class Task {
 					lastMessage.files = files // Ensure files is updated
 					lastMessage.partial = false
 
+					// Broadcast completed message immediately for real-time collaboration
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					console.log(
+						"[Task.say] Checking collaboration status for completed message:",
+						collaborativeManager.isCollaborationActive(),
+					)
+					if (collaborativeManager.isCollaborationActive()) {
+						console.log("[Task.say] Broadcasting completed message")
+						await collaborativeManager.broadcastChatMessage(lastMessage)
+					}
+
 					// instead of streaming partialMessage events, we do a save and post like normal to persist to disk
 					await this.messageStateHandler.saveClineMessagesAndUpdateHistory()
 					// await this.postStateToWebview()
 					const protoMessage = convertClineMessageToProto(lastMessage)
 					await sendPartialMessageEvent(protoMessage) // more performant than an entire postStateToWebview
 				} else {
+					console.log("[Task.say] Creating new non-partial message (partial=false)")
 					// this is a new partial=false message, so add it like normal
 					const sayTs = Date.now()
 					this.taskState.lastMessageTs = sayTs
-					await this.messageStateHandler.addToClineMessages({
+					const newMessage = {
 						ts: sayTs,
-						type: "say",
+						type: "say" as const,
 						say: type,
 						text,
 						images,
 						files,
-					})
+					}
+					await this.messageStateHandler.addToClineMessages(newMessage)
+
+					// Broadcast message immediately for real-time collaboration
+					const collaborativeManager = this.controller.getCollaborativeManager()
+					console.log(
+						"[Task.say] Checking collaboration status for new non-partial:",
+						collaborativeManager.isCollaborationActive(),
+					)
+					if (collaborativeManager.isCollaborationActive()) {
+						console.log("[Task.say] Broadcasting new non-partial message")
+						await collaborativeManager.broadcastChatMessage(newMessage)
+					}
+
 					await this.postStateToWebview()
 				}
 			}
 		} else {
+			console.log("[Task.say] Creating new regular message (no partial specified)")
 			// this is a new non-partial message, so add it like normal
 			const sayTs = Date.now()
 			this.taskState.lastMessageTs = sayTs
-			await this.messageStateHandler.addToClineMessages({
+			const newMessage = {
 				ts: sayTs,
-				type: "say",
+				type: "say" as const,
 				say: type,
 				text,
 				images,
 				files,
-			})
+			}
+			await this.messageStateHandler.addToClineMessages(newMessage)
+
+			// Broadcast message immediately for real-time collaboration
+			const collaborativeManager = this.controller.getCollaborativeManager()
+			console.log(
+				"[Task.say] Checking collaboration status for regular message:",
+				collaborativeManager.isCollaborationActive(),
+			)
+			if (collaborativeManager.isCollaborationActive()) {
+				console.log("[Task.say] Broadcasting regular message")
+				await collaborativeManager.broadcastChatMessage(newMessage)
+			}
+
 			await this.postStateToWebview()
 		}
 	}

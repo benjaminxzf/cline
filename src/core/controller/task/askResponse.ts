@@ -12,6 +12,13 @@ import { ClineAskResponse } from "../../../shared/WebviewMessage"
  */
 export async function askResponse(controller: Controller, request: AskResponseRequest): Promise<Empty> {
 	try {
+		console.log("[askResponse] Received user response:", {
+			responseType: request.responseType,
+			hasText: !!request.text,
+			hasImages: !!request.images?.length,
+			hasFiles: !!request.files?.length,
+		})
+
 		if (!controller.task) {
 			console.warn("askResponse: No active task to receive response")
 			return Empty.create()
@@ -34,8 +41,33 @@ export async function askResponse(controller: Controller, request: AskResponseRe
 				return Empty.create()
 		}
 
+		// Route user response through primary instance system
+		const collaborativeManager = controller.getCollaborativeManager()
+		console.log("[askResponse] Checking collaboration status:", collaborativeManager.isCollaborationActive())
+		if (collaborativeManager.isCollaborationActive()) {
+			if (!collaborativeManager.isPrimaryInstance()) {
+				// Forward to primary instance
+				console.log("[askResponse] Forwarding user response to primary instance")
+				await collaborativeManager.processClineInput("user_response", {
+					responseType: responseType,
+					text: request.text,
+					images: request.images,
+					files: request.files,
+					timestamp: Date.now(),
+				})
+				return Empty.create() // Don't process locally
+			} else {
+				console.log("[askResponse] Processing user response as primary instance")
+			}
+		}
+
 		// Call the task's handler for webview responses
 		await controller.task.handleWebviewAskResponse(responseType, request.text, request.images, request.files)
+
+		// Sync state after response processing (primary only)
+		if (collaborativeManager.isPrimaryInstance()) {
+			await controller.syncStateToSecondaries()
+		}
 
 		return Empty.create()
 	} catch (error) {

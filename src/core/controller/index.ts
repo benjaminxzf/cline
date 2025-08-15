@@ -30,6 +30,8 @@ import { ensureMcpServersDirectoryExists, ensureSettingsDirectoryExists, GlobalF
 import { Task } from "../task"
 import { sendMcpMarketplaceCatalogEvent } from "./mcp/subscribeToMcpMarketplaceCatalog"
 import { sendStateUpdate } from "./state/subscribeToState"
+import { sendPartialMessageEvent } from "./ui/subscribeToPartialMessage"
+import { convertClineMessageToProto } from "@shared/proto-conversions/cline-message"
 import { CollaborativeManager } from "../../collaboration/CollaborativeManager"
 
 /*
@@ -102,8 +104,11 @@ export class Controller {
 		})
 
 		// Initialize collaborative features
+		console.log("[Controller] Initializing collaborative features")
 		this.collaborativeManager = CollaborativeManager.getInstance()
+		console.log("[Controller] Collaborative manager instance created")
 		this.setupCollaborativeSync()
+		console.log("[Controller] Collaborative sync setup complete")
 	}
 
 	async getCurrentMode(): Promise<Mode> {
@@ -114,34 +119,169 @@ export class Controller {
 	 * Sets up collaborative state synchronization
 	 */
 	private setupCollaborativeSync(): void {
+		console.log("[Controller] Setting up collaborative state sync handlers")
+
+		// Register handler for collaborative input messages
+		this.collaborativeManager.onMessage(async (message) => {
+			console.log("[Controller] Received collaborative input:", message.inputType)
+			try {
+				await this.handleCollaborativeInput(message)
+			} catch (error) {
+				console.error("[Controller] Error handling collaborative input:", error)
+			}
+		})
+
 		// Listen for state updates from other participants
 		this.collaborativeManager.onStateChange(async (incomingState) => {
+			console.log("[Controller] Received collaborative state change:", incomingState?.type || "state_update")
 			if (this.isUpdatingFromCollaboration) {
 				// Prevent infinite loops when syncing state
+				console.log("[Controller] Skipping collaborative update - already updating")
 				return
 			}
 
 			try {
-				console.log("[Cline Collaborative] Received state update from another participant")
+				console.log("[Controller] Processing collaborative state update")
 				this.isUpdatingFromCollaboration = true
 
-				// Apply incoming state to this instance
-				await this.applyCollaborativeState(incomingState)
+				// Handle different types of state updates
+				if (incomingState?.type === "delta_request") {
+					// Handle delta request by providing current state for application
+					console.log("[Controller] Handling delta request - providing current state")
+					const currentState = await this.getStateToPostToWebview()
+					const taskState = this.task
+						? {
+								isStreaming: !!this.task,
+								currentTask: "active",
+								mode: await this.getCurrentMode(),
+							}
+						: null
+
+					const uiState = {
+						currentView: "chat",
+						pendingApprovals: [],
+						lastUpdated: Date.now(),
+					}
+
+					// Apply the delta to current state
+					const updatedState = await this.collaborativeManager.applyStateDelta(
+						incomingState.delta,
+						currentState.clineMessages || [],
+						currentState,
+						taskState,
+						uiState,
+					)
+
+					// Apply the updated state
+					await this.applyCollaborativeState(updatedState)
+				} else {
+					// Apply incoming state to this instance
+					await this.applyCollaborativeState(incomingState)
+				}
 
 				// Update webview with new state (but don't broadcast back)
 				await this.postStateToWebviewInternal()
 			} catch (error) {
-				console.error("[Cline Collaborative] Failed to apply incoming state:", error)
+				console.error("[Controller] Failed to apply incoming state:", error)
 			} finally {
 				this.isUpdatingFromCollaboration = false
 			}
 		})
+
+		console.log("[Controller] Initializing collaborative manager")
+		// Initialize asynchronously without blocking constructor
+		this.collaborativeManager
+			.initialize()
+			.then(() => {
+				console.log("[Controller] Collaborative manager initialization complete")
+			})
+			.catch((error) => {
+				console.error("[Controller] Failed to initialize collaborative manager:", error)
+			})
+	}
+
+	/**
+	 * Get the collaborative manager instance
+	 */
+	getCollaborativeManager(): CollaborativeManager {
+		return this.collaborativeManager
+	}
+
+	/**
+	 * Sync current state to secondary instances (primary only)
+	 */
+	async syncStateToSecondaries(): Promise<void> {
+		if (!this.collaborativeManager.isPrimaryInstance()) {
+			console.log("[Controller] Not primary instance, cannot sync state")
+			return
+		}
+
+		try {
+			// Gather current state
+			const currentState = await this.getStateToPostToWebview()
+			const taskState = this.task
+				? {
+						isStreaming: !!this.task,
+						currentTask: "active",
+						mode: await this.getCurrentMode(),
+					}
+				: null
+
+			const uiState = {
+				currentView: "chat", // Could be enhanced to track actual UI state
+				pendingApprovals: [], // Could track pending approval requests
+				lastUpdated: Date.now(),
+			}
+
+			console.log("[Controller] Syncing state to secondaries", {
+				messagesCount: currentState.clineMessages?.length || 0,
+				hasTask: !!this.task,
+				mode: currentState.mode,
+			})
+
+			await this.collaborativeManager.syncStateToSecondaries(
+				currentState.clineMessages || [],
+				currentState,
+				taskState,
+				uiState,
+			)
+		} catch (error) {
+			console.error("[Controller] Error syncing state to secondaries:", error)
+		}
 	}
 
 	/**
 	 * Applies collaborative state from another participant
 	 */
 	private async applyCollaborativeState(incomingState: any): Promise<void> {
+		if (!incomingState) return
+
+		console.log("[Cline Collaborative] Received collaborative event:", incomingState.type || "state_update")
+
+		// Handle different types of collaborative events
+		if (incomingState.type === "chat_message" && incomingState.clineMessage) {
+			// Handle individual message broadcasts for real-time sync
+			console.log("[Controller] Received collaborative chat_message:", incomingState.clineMessage)
+			await this.handleCollaborativeMessage(incomingState.clineMessage)
+			return
+		}
+
+		if (incomingState.type === "conversation_switch" && incomingState.taskId) {
+			// Handle conversation switching from other participants
+			console.log("[Cline Collaborative] Other participant switched to task:", incomingState.taskId)
+			// Auto-switch could be intrusive, so for now just log it
+			// Could potentially show a notification or indicator in the UI
+			return
+		}
+
+		if (incomingState.type === "user_response") {
+			// Handle user responses (edit approvals/rejections) from other participants
+			console.log("[Cline Collaborative] Other participant response:", incomingState.responseType)
+			// Could potentially show this in the UI as well
+			return
+		}
+
+		// Handle full state updates (existing logic)
 		if (!incomingState?.state) return
 
 		const state = incomingState.state
@@ -164,6 +304,101 @@ export class Controller {
 		// Apply other relevant state
 		if (state.autoApprovalSettings) {
 			this.cacheService.setGlobalState("autoApprovalSettings", state.autoApprovalSettings)
+		}
+	}
+
+	/**
+	 * Validates collaborative input message structure
+	 */
+	private validateCollaborativeInput(message: any): boolean {
+		if (!message || typeof message !== "object") {
+			console.error("[Controller] Invalid message: not an object")
+			return false
+		}
+
+		if (!message.inputType || typeof message.inputType !== "string") {
+			console.error("[Controller] Invalid message: missing or invalid inputType")
+			return false
+		}
+
+		if (!message.timestamp || typeof message.timestamp !== "number") {
+			console.error("[Controller] Invalid message: missing or invalid timestamp")
+			return false
+		}
+
+		// Validate message is not too old (more than 30 seconds)
+		const messageAge = Date.now() - message.timestamp
+		if (messageAge > 30000) {
+			console.warn("[Controller] Message is too old, ignoring:", messageAge + "ms")
+			return false
+		}
+
+		return true
+	}
+
+	/**
+	 * Handles collaborative input messages from secondary instances
+	 */
+	private async handleCollaborativeInput(message: any): Promise<void> {
+		console.log("[Controller] Processing collaborative input:", message.inputType)
+
+		// Validate input message
+		if (!this.validateCollaborativeInput(message)) {
+			console.error("[Controller] Invalid collaborative input, rejecting:", message)
+			return
+		}
+
+		switch (message.inputType) {
+			case "new_task":
+				console.log("[Controller] Handling collaborative new task request")
+				await this.initTask(message.task, message.images, message.files)
+				break
+
+			case "user_response":
+				console.log("[Controller] Handling collaborative user response")
+				if (this.task) {
+					await this.task.handleWebviewAskResponse(message.responseType, message.text, message.images, message.files)
+				} else {
+					console.warn("[Controller] No active task to handle user response")
+				}
+				break
+
+			case "switch_task":
+				console.log("[Controller] Handling collaborative task switch")
+				await this.reinitExistingTaskFromId(message.taskId)
+				break
+
+			default:
+				console.warn("[Controller] Unknown collaborative input type:", message.inputType)
+				break
+		}
+
+		// Sync state to other secondaries after processing
+		if (this.collaborativeManager.isPrimaryInstance()) {
+			await this.syncStateToSecondaries()
+		}
+	}
+
+	/**
+	 * Handles individual collaborative messages for real-time sync
+	 */
+	private async handleCollaborativeMessage(message: any): Promise<void> {
+		if (!this.task) {
+			console.log("[Cline Collaborative] No active task to apply collaborative message")
+			return
+		}
+
+		try {
+			// Add the message to the current task's conversation
+			await this.task.messageStateHandler.addToClineMessages(message)
+
+			// Send as partial message event for immediate UI update
+			const protoMessage = convertClineMessageToProto(message)
+			await sendPartialMessageEvent(protoMessage)
+
+			console.log("[Cline Collaborative] Applied collaborative message:", message.type, message.say || message.ask)
+		} catch (error) {
+			console.error("[Cline Collaborative] Failed to apply collaborative message:", error)
 		}
 	}
 
@@ -320,6 +555,23 @@ export class Controller {
 	}
 
 	async initTask(task?: string, images?: string[], files?: string[], historyItem?: HistoryItem) {
+		// Route new user tasks through collaborative system first
+		if (task && !historyItem && this.collaborativeManager.isCollaborationActive()) {
+			if (!this.collaborativeManager.isPrimaryInstance()) {
+				// Forward to primary instance
+				console.log("[Controller] Forwarding new task to primary instance")
+				await this.collaborativeManager.processClineInput("new_task", {
+					task,
+					images,
+					files,
+					timestamp: Date.now(),
+				})
+				return // Don't process locally
+			} else {
+				console.log("[Controller] Processing new task as primary instance")
+			}
+		}
+
 		await this.clearTask() // ensures that an existing task doesn't exist before starting a new one, although this shouldn't be possible since user must clear task before starting a new one
 
 		const apiConfiguration = this.cacheService.getApiConfiguration()
@@ -387,12 +639,59 @@ export class Controller {
 			files,
 			historyItem,
 		)
+
+		// Broadcast user message immediately for real-time collaboration
+		console.log("[Controller] initTask - task:", !!task, "historyItem:", !!historyItem)
+		if (task && !historyItem) {
+			// Only broadcast for new tasks, not when loading from history
+			console.log("[Controller] Broadcasting new user message for collaboration")
+			console.log("[Controller] Collaboration enabled:", this.collaborativeManager.isCollaborationEnabledStatus)
+			console.log("[Controller] Collaboration connection active:", this.collaborativeManager.isConnectionActive())
+			console.log("[Controller] Collaboration active:", this.collaborativeManager.isCollaborationActive())
+
+			// Note: Collaborative routing is now handled at the beginning of initTask
+			// Primary instances will sync state after task execution
+		} else {
+			console.log("[Controller] Skipping collaboration routing - task:", !!task, "historyItem:", !!historyItem)
+		}
+
+		// Execute the task
+		const api = buildApiHandler(apiConfiguration, mode)
+		this.task.api = api
+		// Note: Task execution is handled through other methods, not a single execute() method
+		console.log("[Controller] Task API handler updated for collaborative execution")
+
+		// SYNC STATE TO SECONDARIES after task processing (primary only)
+		if (task && !historyItem && this.collaborativeManager.isPrimaryInstance()) {
+			console.log("[Controller] Primary instance syncing state to secondaries after task creation")
+			await this.syncStateToSecondaries()
+		}
 	}
 
 	async reinitExistingTaskFromId(taskId: string) {
 		const history = await this.getTaskWithId(taskId)
 		if (history) {
+			// Route conversation switch through primary instance system
+			if (this.collaborativeManager.isCollaborationActive()) {
+				if (!this.collaborativeManager.isPrimaryInstance()) {
+					// Forward to primary instance
+					console.log("[Controller] Forwarding conversation switch to primary instance")
+					await this.collaborativeManager.processClineInput("switch_task", {
+						taskId: taskId,
+						timestamp: Date.now(),
+					})
+					return // Don't process locally
+				} else {
+					console.log("[Controller] Processing conversation switch as primary instance")
+				}
+			}
+
 			await this.initTask(undefined, undefined, undefined, history.historyItem)
+
+			// Sync state after task switch (primary only)
+			if (this.collaborativeManager.isPrimaryInstance()) {
+				await this.syncStateToSecondaries()
+			}
 		}
 	}
 
@@ -734,9 +1033,23 @@ export class Controller {
 		const state = await this.getStateToPostToWebview()
 		await sendStateUpdate(this.id, state)
 
-		// Broadcast state to collaborative participants (only if not updating from collaboration)
-		if (!this.isUpdatingFromCollaboration && this.collaborativeManager.isCollaborationActive()) {
-			await this.collaborativeManager.broadcastStateUpdate(state)
+		// Sync state using primary instance system (only if primary and not updating from collaboration)
+		if (!this.isUpdatingFromCollaboration && this.collaborativeManager.isPrimaryInstance()) {
+			const taskState = this.task
+				? {
+						isStreaming: !!this.task,
+						currentTask: "active",
+						mode: await this.getCurrentMode(),
+					}
+				: null
+
+			const uiState = {
+				currentView: "chat",
+				pendingApprovals: [],
+				lastUpdated: Date.now(),
+			}
+
+			await this.collaborativeManager.syncStateToSecondaries(state.clineMessages || [], state, taskState, uiState)
 		}
 	}
 
@@ -745,6 +1058,9 @@ export class Controller {
 	 */
 	private async postStateToWebviewInternal() {
 		const state = await this.getStateToPostToWebview()
+		// Mark state as collaborative update for UI detection
+		;(state as any)._isCollaborativeUpdate = true
+		;(state as any)._fromUser = "collaborative-sync"
 		await sendStateUpdate(this.id, state)
 	}
 
