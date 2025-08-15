@@ -18,6 +18,8 @@ export class CollaborativeManager {
 	private diffManager: CollaborativeDiffManager
 	private approvalManager: CollaborativeApprovalManager
 	private stateSync: ClineStateSync
+	private controllerInstance: any = null // Controller reference
+	private isApplyingMessage: boolean = false // Guard against recursive message application
 
 	private currentSession: CollaborativeSession | null = null
 	private isCollaborationEnabled = false
@@ -54,6 +56,14 @@ export class CollaborativeManager {
 			CollaborativeManager.instance = new CollaborativeManager()
 		}
 		return CollaborativeManager.instance
+	}
+
+	/**
+	 * Set the controller instance reference
+	 */
+	setController(controller: any): void {
+		console.log("[CollaborativeManager] Setting controller instance")
+		this.controllerInstance = controller
 	}
 
 	/**
@@ -117,7 +127,7 @@ export class CollaborativeManager {
 		console.log("[CollaborativeManager] Setting up primary instance event handlers")
 
 		// Handle state updates from primary instance
-		this.collaborationClient.onStateUpdate((stateData) => {
+		this.collaborationClient.onStateUpdate(async (stateData) => {
 			console.log("[CollaborativeManager] Received state update from primary", {
 				size: JSON.stringify(stateData).length,
 				fromUser: stateData.fromUserName,
@@ -279,6 +289,19 @@ export class CollaborativeManager {
 	// ===== Integration Methods for Cline Core =====
 
 	/**
+	 * Broadcast task creation to secondary instances
+	 * NOTE: This is now deprecated - secondary instances will create mirror tasks automatically
+	 * when they receive the first message from the primary's task
+	 */
+	async broadcastTaskCreation(task?: string, images?: string[], files?: string[]): Promise<void> {
+		console.log(
+			"[CollaborativeManager] Task creation broadcast deprecated - secondaries will mirror automatically on first message",
+		)
+		// Secondary instances will automatically create mirror tasks when they receive the first message
+		// This eliminates the duplicate task creation issue
+	}
+
+	/**
 	 * Primary Cline state synchronization - broadcasts full state to secondary instances
 	 */
 	async broadcastChatMessage(message: any): Promise<void> {
@@ -354,6 +377,27 @@ export class CollaborativeManager {
 	}
 
 	/**
+	 * Handle task creation event from primary instance
+	 * Secondary instances should NOT create their own tasks - they should only mirror primary's state
+	 */
+	private async handleTaskCreationFromPrimary(taskData: any): Promise<void> {
+		console.log("[CollaborativeManager] Task creation notification from primary:", {
+			hasTask: !!taskData.task,
+			imageCount: taskData.images?.length || 0,
+			fileCount: taskData.files?.length || 0,
+		})
+
+		// Secondary instances should NOT create tasks locally
+		// They should only mirror the primary's state through regular message broadcasts
+		console.log(
+			"[CollaborativeManager] Secondary instance - waiting for primary state updates instead of creating local task",
+		)
+
+		// The primary will send the actual task messages and state through regular broadcasts
+		// which will be handled by applyMessageFromPrimary() and state sync mechanisms
+	}
+
+	/**
 	 * Applies a message from the primary instance to the secondary instance
 	 */
 	private async applyMessageFromPrimary(message: any): Promise<void> {
@@ -363,31 +407,85 @@ export class CollaborativeManager {
 			isPartial: message.partial,
 		})
 
+		// Prevent recursive message application
+		if (this.isApplyingMessage) {
+			console.log("[CollaborativeManager] Already applying message, skipping to prevent loop")
+			return
+		}
+
 		// In secondary instances, we need to simulate receiving the message through the normal Task.say flow
 		// but mark it as coming from collaboration so it doesn't trigger another broadcast
 		try {
+			this.isApplyingMessage = true
 			// Get the current task instance through the controller
 			const controller = this.getController()
-			if (!controller || !controller.getCurrentTask) {
-				console.log("[CollaborativeManager] No current task available to apply message")
+			if (!controller) {
+				console.log("[CollaborativeManager] No controller available to apply message")
 				return
 			}
 
-			const currentTask = controller.getCurrentTask()
+			let currentTask = controller.task
 			if (!currentTask) {
-				console.log("[CollaborativeManager] No active task to apply message to")
-				return
+				console.log("[CollaborativeManager] No active task on secondary - creating task to mirror primary")
+				// Create a minimal task on secondary instance ONLY to mirror primary's messages
+				// This is different from user-initiated task creation - it's purely for state mirroring
+				controller.isUpdatingFromCollaboration = true
+
+				// Create a minimal history item to satisfy the initTask requirements
+				const mirrorHistoryItem = {
+					id: `mirror-${Date.now()}`, // Unique ID for this mirror task
+					ulid: `mirror-${Date.now()}`,
+					ts: Date.now(),
+					task: "Mirroring primary instance", // Minimal task content
+					tokensIn: 0,
+					tokensOut: 0,
+					cacheWrites: 0,
+					cacheReads: 0,
+					totalCost: 0,
+					isFavorited: false,
+				}
+
+				await controller.initTask(undefined, undefined, undefined, mirrorHistoryItem)
+				currentTask = controller.task
+				controller.isUpdatingFromCollaboration = false
+
+				if (!currentTask) {
+					console.log("[CollaborativeManager] Failed to create mirror task on secondary instance")
+					return
+				}
+				console.log("[CollaborativeManager] ✅ Created mirror task on secondary instance for primary state")
 			}
 
-			// Apply the message to the current task's message state
-			// TODO: Implement proper message state handler integration
-			console.log("[CollaborativeManager] Would apply message to task state handler")
-			// await currentTask.messageStateHandler.addClineMessage(message);
-			// await currentTask.postStateToWebview();
+			// Apply the message to the current task
+			if (currentTask && currentTask.messageStateHandler) {
+				console.log("[CollaborativeManager] Applying message to task message state handler")
+
+				// Mark as updating from collaboration to prevent re-broadcasting
+				if (controller.isUpdatingFromCollaboration !== undefined) {
+					controller.isUpdatingFromCollaboration = true
+				}
+
+				// Add the message to the task's message state
+				await currentTask.messageStateHandler.addToClineMessages(message)
+
+				// Update the webview with the new message
+				await currentTask.postStateToWebview()
+
+				// Reset the collaboration flag
+				if (controller.isUpdatingFromCollaboration !== undefined) {
+					controller.isUpdatingFromCollaboration = false
+				}
+
+				console.log("[CollaborativeManager] ✅ Successfully applied message to task UI")
+			} else {
+				console.log("[CollaborativeManager] Task exists but no message state handler available")
+			}
 
 			console.log("[CollaborativeManager] ✅ Successfully applied message from primary")
 		} catch (error) {
 			console.error("[CollaborativeManager] 🔴 Error applying message from primary:", error)
+		} finally {
+			this.isApplyingMessage = false
 		}
 	}
 
@@ -395,9 +493,7 @@ export class CollaborativeManager {
 	 * Gets the controller instance
 	 */
 	private getController(): any {
-		// This would need to be injected or accessed through the extension context
-		// For now, return null as this needs proper integration
-		return null
+		return this.controllerInstance
 	}
 
 	/**

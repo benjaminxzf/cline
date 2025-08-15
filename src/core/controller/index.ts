@@ -106,6 +106,7 @@ export class Controller {
 		// Initialize collaborative features
 		console.log("[Controller] Initializing collaborative features")
 		this.collaborativeManager = CollaborativeManager.getInstance()
+		this.collaborativeManager.setController(this)
 		console.log("[Controller] Collaborative manager instance created")
 		this.setupCollaborativeSync()
 		console.log("[Controller] Collaborative sync setup complete")
@@ -555,20 +556,25 @@ export class Controller {
 	}
 
 	async initTask(task?: string, images?: string[], files?: string[], historyItem?: HistoryItem) {
-		// Route new user tasks through collaborative system first
-		if (task && !historyItem && this.collaborativeManager.isCollaborationActive()) {
-			if (!this.collaborativeManager.isPrimaryInstance()) {
-				// Forward to primary instance
-				console.log("[Controller] Forwarding new task to primary instance")
-				await this.collaborativeManager.processClineInput("new_task", {
-					task,
-					images,
-					files,
-					timestamp: Date.now(),
-				})
-				return // Don't process locally
-			} else {
-				console.log("[Controller] Processing new task as primary instance")
+		// Skip collaborative routing if this is called from a collaboration update
+		if (this.isUpdatingFromCollaboration) {
+			console.log("[Controller] Skipping collaborative routing - updating from collaboration")
+		} else {
+			// Route new user tasks through collaborative system first
+			if (task && !historyItem && this.collaborativeManager.isCollaborationActive()) {
+				if (!this.collaborativeManager.isPrimaryInstance()) {
+					// Forward to primary instance
+					console.log("[Controller] Forwarding new task to primary instance")
+					await this.collaborativeManager.processClineInput("new_task", {
+						task,
+						images,
+						files,
+						timestamp: Date.now(),
+					})
+					return // Don't process locally
+				} else {
+					console.log("[Controller] Processing new task as primary instance")
+				}
 			}
 		}
 
@@ -639,6 +645,12 @@ export class Controller {
 			files,
 			historyItem,
 		)
+
+		// Broadcast task creation to secondary instances (primary only, new tasks only)
+		if (task && !historyItem && !this.isUpdatingFromCollaboration && this.collaborativeManager.isPrimaryInstance()) {
+			console.log("[Controller] Broadcasting task creation to secondary instances")
+			await this.collaborativeManager.broadcastTaskCreation(task, images, files)
+		}
 
 		// Broadcast user message immediately for real-time collaboration
 		console.log("[Controller] initTask - task:", !!task, "historyItem:", !!historyItem)
