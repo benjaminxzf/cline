@@ -10,7 +10,6 @@ interface TaskSectionProps {
 		totalTokensOut: number
 		totalCacheWrites?: number
 		totalCacheReads?: number
-		totalCost: number
 	}
 	lastApiReqTotalTokens?: number
 	selectedModelInfo: {
@@ -43,7 +42,6 @@ export const TaskSection: React.FC<TaskSectionProps> = ({
 			doesModelSupportPromptCache={selectedModelInfo.supportsPromptCache}
 			cacheWrites={apiMetrics.totalCacheWrites}
 			cacheReads={apiMetrics.totalCacheReads}
-			totalCost={apiMetrics.totalCost}
 			lastApiReqTotalTokens={lastApiReqTotalTokens}
 			lastProgressMessageText={lastProgressMessageText}
 			onClose={messageHandlers.handleTaskCloseButtonClick}

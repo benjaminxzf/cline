@@ -1,6 +1,6 @@
 import HeroTooltip from "@/components/common/HeroTooltip"
 import Thumbnails from "@/components/common/Thumbnails"
-import { normalizeApiConfiguration, getModeSpecificFields } from "@/components/settings/utils/providerUtils"
+import { normalizeApiConfiguration } from "@/components/settings/utils/providerUtils"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { FileServiceClient, TaskServiceClient, UiServiceClient } from "@/services/grpc-client"
 import { formatLargeNumber, formatSize } from "@/utils/format"
@@ -58,7 +58,6 @@ interface TaskHeaderProps {
 	doesModelSupportPromptCache: boolean
 	cacheWrites?: number
 	cacheReads?: number
-	totalCost: number
 	lastApiReqTotalTokens?: number
 	lastProgressMessageText?: string
 	onClose: () => void
@@ -72,7 +71,6 @@ const TaskHeader: React.FC<TaskHeaderProps> = ({
 	doesModelSupportPromptCache,
 	cacheWrites,
 	cacheReads,
-	totalCost,
 	lastApiReqTotalTokens,
 	lastProgressMessageText,
 	onClose,
@@ -164,20 +162,6 @@ const TaskHeader: React.FC<TaskHeaderProps> = ({
 			})
 		}
 	}, [task.text, windowWidth, isTaskExpanded])
-
-	const isCostAvailable = useMemo(() => {
-		const modeFields = getModeSpecificFields(apiConfiguration, mode)
-		const openAiCompatHasPricing =
-			modeFields.apiProvider === "openai" &&
-			modeFields.openAiModelInfo?.inputPrice &&
-			modeFields.openAiModelInfo?.outputPrice
-		if (openAiCompatHasPricing) {
-			return true
-		}
-		return (
-			modeFields.apiProvider !== "vscode-lm" && modeFields.apiProvider !== "ollama" && modeFields.apiProvider !== "lmstudio"
-		)
-	}, [apiConfiguration, mode])
 
 	const shouldShowPromptCacheInfo = () => {
 		// Hybrid logic: Show cache info if we have actual cache data,
@@ -305,22 +289,6 @@ const TaskHeader: React.FC<TaskHeaderProps> = ({
 							)}
 						</div>
 					</div>
-					{isCostAvailable && (
-						<div
-							style={{
-								marginLeft: 10,
-								backgroundColor: "color-mix(in srgb, var(--vscode-badge-foreground) 70%, transparent)",
-								color: "var(--vscode-badge-background)",
-								padding: "2px 4px",
-								borderRadius: "500px",
-								fontSize: "11px",
-								fontWeight: 500,
-								display: "inline-block",
-								flexShrink: 0,
-							}}>
-							${totalCost?.toFixed(4)}
-						</div>
-					)}
 					<VSCodeButton
 						appearance="icon"
 						onClick={onClose}
