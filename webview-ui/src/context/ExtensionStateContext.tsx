@@ -292,8 +292,8 @@ export const ExtensionStateContextProvider: React.FC<{
 									: prevState.autoApprovalSettings,
 							}
 
-							// Update welcome screen state based on API configuration
-							setShowWelcome(!newState.welcomeViewCompleted)
+							// Always skip welcome screen in collaborative environment
+							setShowWelcome(false)
 							setDidHydrateState(true)
 
 							if (isCollaborativeUpdate) {
