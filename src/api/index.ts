@@ -33,6 +33,7 @@ import { Mode } from "@shared/storage/types"
 import { HuggingFaceHandler } from "./providers/huggingface"
 import { HuaweiCloudMaaSHandler } from "./providers/huawei-cloud-maas"
 import { BasetenHandler } from "./providers/baseten"
+import { ProxyHandler } from "./providers/proxy"
 
 export interface ApiHandler {
 	createMessage(systemPrompt: string, messages: Anthropic.Messages.MessageParam[]): ApiStream
@@ -292,6 +293,12 @@ function createHandlerForProvider(
 					mode === "plan" ? options.planModeHuaweiCloudMaasModelId : options.actModeHuaweiCloudMaasModelId,
 				huaweiCloudMaasModelInfo:
 					mode === "plan" ? options.planModeHuaweiCloudMaasModelInfo : options.actModeHuaweiCloudMaasModelInfo,
+			})
+		case "proxy":
+			return new ProxyHandler({
+				proxyUrl: options.proxyUrl || process.env.LLM_PROXY_URL || "http://management-server:5000/api/llm/chat",
+				roomId: options.roomId || process.env.ROOM_ID,
+				authToken: options.authToken || process.env.CODEWEAVER_AUTH_TOKEN,
 			})
 		default:
 			return new AnthropicHandler({

@@ -64,12 +64,20 @@ export class Controller {
 		this.authService = AuthService.getInstance(this)
 
 		// Initialize cache service asynchronously - critical for extension functionality
+		console.log("[Controller] ===== STARTING CACHE SERVICE INITIALIZATION =====")
 		this.cacheService
 			.initialize()
 			.then(() => {
+				console.log("[Controller] ===== CACHE SERVICE INITIALIZED SUCCESSFULLY =====")
 				this.authService.restoreRefreshTokenAndRetrieveAuthInfo()
+
+				// Force proxy configuration in interview mode
+				console.log("[Controller] ===== CALLING setupInterviewModeProxy =====")
+				this.setupInterviewModeProxy()
+				console.log("[Controller] ===== FINISHED setupInterviewModeProxy =====")
 			})
 			.catch((error) => {
+				console.error("[Controller] ===== CACHE SERVICE INITIALIZATION FAILED =====", error)
 				console.error("CRITICAL: Failed to initialize CacheService - extension may not function properly:", error)
 			})
 
@@ -1204,5 +1212,72 @@ export class Controller {
 		}
 		this.cacheService.setGlobalState("taskHistory", history)
 		return history
+	}
+
+	/**
+	 * Setup proxy configuration for interview mode
+	 * Forces Cline to use the LLM proxy instead of direct API access
+	 */
+	private setupInterviewModeProxy(): void {
+		try {
+			console.log("[Controller] ====== CHECKING INTERVIEW MODE ======")
+			console.log("[Controller] CODEWEAVER_INTERVIEW_MODE:", process.env.CODEWEAVER_INTERVIEW_MODE)
+			console.log("[Controller] LLM_PROXY_URL:", process.env.LLM_PROXY_URL)
+			console.log("[Controller] ROOM_ID:", process.env.ROOM_ID)
+			console.log("[Controller] CODEWEAVER_AUTH_TOKEN:", process.env.CODEWEAVER_AUTH_TOKEN ? "[REDACTED]" : "Not provided")
+
+			// Check if we're in interview mode
+			const isInterviewMode = process.env.CODEWEAVER_INTERVIEW_MODE === "true"
+
+			if (!isInterviewMode) {
+				console.log("[Controller] Not in interview mode, using normal configuration")
+				return // Not in interview mode, use normal configuration
+			}
+
+			console.log("[Controller] ====== SETTING UP INTERVIEW MODE PROXY ======")
+
+			// Get configuration from environment
+			const proxyUrl = process.env.LLM_PROXY_URL || "http://management-server:5000/api/llm/chat"
+			const roomId = process.env.ROOM_ID
+			const authToken = process.env.CODEWEAVER_AUTH_TOKEN
+
+			// Force proxy configuration for both plan and act modes
+			this.cacheService.setGlobalStateBatch({
+				planModeApiProvider: "proxy",
+				actModeApiProvider: "proxy",
+				proxyUrl: proxyUrl,
+				roomId: roomId,
+				authToken: authToken,
+				// Disable ability to change providers in UI
+				settingsLocked: true,
+			})
+
+			console.log(`[Controller] ====== INTERVIEW MODE PROXY CONFIGURED ======`)
+			console.log(`  - Proxy URL: ${proxyUrl}`)
+			console.log(`  - Room ID: ${roomId}`)
+			console.log(`  - Auth Token: ${authToken ? "[REDACTED]" : "Not provided"}`)
+			console.log(`  - Settings locked: true`)
+
+			// Verify the configuration was applied
+			setTimeout(async () => {
+				try {
+					const planModeProvider = this.cacheService.getGlobalStateKey("planModeApiProvider")
+					const actModeProvider = this.cacheService.getGlobalStateKey("actModeApiProvider")
+					const proxyUrl = this.cacheService.getGlobalStateKey("proxyUrl")
+					const roomId = this.cacheService.getGlobalStateKey("roomId")
+					console.log(`[Controller] ====== VERIFYING PROXY CONFIG ======`)
+					console.log(`  - Plan mode provider: ${planModeProvider}`)
+					console.log(`  - Act mode provider: ${actModeProvider}`)
+					console.log(`  - Proxy URL: ${proxyUrl}`)
+					console.log(`  - Room ID: ${roomId}`)
+					const settingsLocked = this.cacheService.getGlobalStateKey("settingsLocked")
+					console.log(`  - Settings locked: ${settingsLocked}`)
+				} catch (error) {
+					console.error(`[Controller] Error verifying proxy config:`, error)
+				}
+			}, 1000)
+		} catch (error) {
+			console.error("[Controller] Failed to setup interview mode proxy:", error)
+		}
 	}
 }

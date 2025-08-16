@@ -281,6 +281,20 @@ export function normalizeApiConfiguration(
 				selectedModelId: huaweiCloudMaasModelId || huaweiCloudMaasDefaultModelId,
 				selectedModelInfo: huaweiCloudMaasModelInfo || huaweiCloudMaasModels[huaweiCloudMaasDefaultModelId],
 			}
+		case "proxy":
+			return {
+				selectedProvider: provider,
+				selectedModelId: "gemini-2.5-flash",
+				selectedModelInfo: {
+					maxTokens: 8192,
+					contextWindow: 1000000,
+					supportsImages: true,
+					supportsPromptCache: false,
+					inputPrice: 0.075,
+					outputPrice: 0.3,
+					description: "Gemini 2.5 Flash via CodeWeaver Proxy",
+				},
+			}
 		default:
 			return getProviderData(anthropicModels, anthropicDefaultModelId)
 	}
@@ -512,6 +526,10 @@ export async function syncModeConfigurations(
 			updates.actModeHuaweiCloudMaasModelId = sourceFields.huaweiCloudMaasModelId
 			updates.planModeHuaweiCloudMaasModelInfo = sourceFields.huaweiCloudMaasModelInfo
 			updates.actModeHuaweiCloudMaasModelInfo = sourceFields.huaweiCloudMaasModelInfo
+			break
+
+		case "proxy":
+			// Proxy provider doesn't have configurable models - managed by CodeWeaver
 			break
 
 		// Providers that use apiProvider + apiModelId fields

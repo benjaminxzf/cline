@@ -32,6 +32,7 @@ export type ApiProvider =
 	| "huggingface"
 	| "huawei-cloud-maas"
 	| "baseten"
+	| "proxy"
 
 export interface ApiHandlerOptions {
 	// Global configuration (not mode-specific)
@@ -98,6 +99,9 @@ export interface ApiHandlerOptions {
 	sapAiCoreTokenUrl?: string
 	sapAiCoreBaseUrl?: string
 	huaweiCloudMaasApiKey?: string
+	proxyUrl?: string
+	roomId?: string
+	authToken?: string
 	onRetryAttempt?: (attempt: number, maxRetries: number, delay: number, error: any) => void
 	// Plan mode configurations
 	planModeApiModelId?: string
@@ -162,6 +166,7 @@ export type ApiConfiguration = ApiHandlerOptions & {
 	planModeApiProvider?: ApiProvider
 	actModeApiProvider?: ApiProvider
 	favoritedModelIds?: string[]
+	settingsLocked?: boolean
 }
 
 // Models

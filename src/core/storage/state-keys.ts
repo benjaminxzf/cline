@@ -102,6 +102,11 @@ export type GlobalStateKey =
 	| "strictPlanModeEnabled"
 	| "focusChainSettings"
 	| "focusChainFeatureFlagEnabled"
+	// Proxy configuration for interview mode
+	| "proxyUrl"
+	| "roomId"
+	| "authToken"
+	| "settingsLocked"
 	// Settings around plan/act and ephemeral model configuration
 	| "preferredLanguage"
 	| "openaiReasoningEffort"
@@ -285,6 +290,11 @@ export interface GlobalState {
 	actModeHuggingFaceModelInfo: ModelInfo | undefined
 	actModeHuaweiCloudMaasModelId: string | undefined
 	actModeHuaweiCloudMaasModelInfo: ModelInfo | undefined
+	// Proxy configuration for interview mode
+	proxyUrl: string | undefined
+	roomId: string | undefined
+	authToken: string | undefined
+	settingsLocked: boolean | undefined
 }
 
 export interface Secrets {
