@@ -292,7 +292,7 @@ export function normalizeApiConfiguration(
 					supportsPromptCache: false,
 					inputPrice: 0.075,
 					outputPrice: 0.3,
-					description: "Gemini 2.5 Flash via CodeWeaver Proxy",
+					description: "Gemini 2.5 Flash via Blazer Proxy",
 				},
 			}
 		default:
@@ -529,7 +529,7 @@ export async function syncModeConfigurations(
 			break
 
 		case "proxy":
-			// Proxy provider doesn't have configurable models - managed by CodeWeaver
+			// Proxy provider doesn't have configurable models - managed by Blazer
 			break
 
 		// Providers that use apiProvider + apiModelId fields

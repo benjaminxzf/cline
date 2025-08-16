@@ -34,7 +34,7 @@ export class ProxyHandler implements ApiHandler {
 		}
 
 		// No fallback - authentication token is required
-		throw new Error("Authentication token is required. Set CODEWEAVER_AUTH_TOKEN environment variable.")
+		throw new Error("Authentication token is required. Set BLAZER_AUTH_TOKEN environment variable.")
 	}
 
 	/**
@@ -180,7 +180,7 @@ export class ProxyHandler implements ApiHandler {
 				supportsPromptCache: false,
 				inputPrice: 0.075, // $0.075 per 1M input tokens
 				outputPrice: 0.3, // $0.30 per 1M output tokens
-				description: "Google Gemini 2.5 Flash via CodeWeaver Proxy",
+				description: "Google Gemini 2.5 Flash via Blazer Proxy",
 			},
 		}
 	}
