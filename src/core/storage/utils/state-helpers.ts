@@ -381,7 +381,7 @@ export async function readStateFromDisk(context: ExtensionContext) {
 		mcpMarketplaceEnabled: mcpMarketplaceEnabledRaw || true,
 		mcpDisplayMode: mcpDisplayMode ?? DEFAULT_MCP_DISPLAY_MODE,
 		mcpResponsesCollapsed: mcpResponsesCollapsed,
-		telemetrySetting: telemetrySetting || "unset",
+		telemetrySetting: telemetrySetting || "disabled", // DISABLED: Telemetry popup
 		planActSeparateModelsSetting,
 		enableCheckpointsSetting: enableCheckpointsSettingRaw || true,
 		shellIntegrationTimeout: shellIntegrationTimeout || 4000,
