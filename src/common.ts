@@ -58,7 +58,7 @@ export async function initialize(context: vscode.ExtensionContext): Promise<Webv
 }
 
 async function showVersionUpdateAnnouncement(context: vscode.ExtensionContext) {
-	// Version checking for autoupdate notification
+	// Version checking for autoupdate notification - DISABLED
 	const currentVersion = context.extension.packageJSON.version
 	const previousVersion = context.globalState.get<string>("clineVersion")
 	// Perform post-update actions if necessary
@@ -66,24 +66,29 @@ async function showVersionUpdateAnnouncement(context: vscode.ExtensionContext) {
 		if (!previousVersion || currentVersion !== previousVersion) {
 			Logger.log(`Cline version changed: ${previousVersion} -> ${currentVersion}. First run or update detected.`)
 
-			// Use the same condition as announcements: focus when there's a new announcement to show
-			const lastShownAnnouncementId = context.globalState.get<string>("lastShownAnnouncementId")
-			const latestAnnouncementId = getLatestAnnouncementId(context)
+			// DISABLED: Version update announcements and popups
+			// const lastShownAnnouncementId = context.globalState.get<string>("lastShownAnnouncementId")
+			// const latestAnnouncementId = getLatestAnnouncementId(context)
 
-			if (lastShownAnnouncementId !== latestAnnouncementId) {
-				// Focus Cline when there's a new announcement to show (major/minor updates or fresh installs)
-				const message = previousVersion
-					? `Cline has been updated to v${currentVersion}`
-					: `Welcome to Cline v${currentVersion}`
-				await vscode.commands.executeCommand("claude-dev.SidebarProvider.focus")
-				await new Promise((resolve) => setTimeout(resolve, 200))
-				HostProvider.window.showMessage({
-					type: ShowMessageType.INFORMATION,
-					message,
-				})
-			}
+			// if (lastShownAnnouncementId !== latestAnnouncementId) {
+			// 	// Focus Cline when there's a new announcement to show (major/minor updates or fresh installs)
+			// 	const message = previousVersion
+			// 		? `Cline has been updated to v${currentVersion}`
+			// 		: `Welcome to Cline v${currentVersion}`
+			// 	await vscode.commands.executeCommand("claude-dev.SidebarProvider.focus")
+			// 	await new Promise((resolve) => setTimeout(resolve, 200))
+			// 	HostProvider.window.showMessage({
+			// 		type: ShowMessageType.INFORMATION,
+			// 		message,
+			// 	})
+			// }
+
 			// Always update the main version tracker for the next launch.
 			await context.globalState.update("clineVersion", currentVersion)
+
+			// Also mark the announcement as shown to prevent the popup
+			const latestAnnouncementId = getLatestAnnouncementId(context)
+			await context.globalState.update("lastShownAnnouncementId", latestAnnouncementId)
 		}
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error)

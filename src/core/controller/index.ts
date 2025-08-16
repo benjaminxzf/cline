@@ -1129,7 +1129,8 @@ export class Controller {
 			.slice(0, 100) // for now we're only getting the latest 100 tasks, but a better solution here is to only pass in 3 for recent task history, and then get the full task history on demand when going to the task history view (maybe with pagination?)
 
 		const latestAnnouncementId = getLatestAnnouncementId(this.context)
-		const shouldShowAnnouncement = lastShownAnnouncementId !== latestAnnouncementId
+		// DISABLED: Version update announcements and popups
+		const shouldShowAnnouncement = false // lastShownAnnouncementId !== latestAnnouncementId
 		const platform = process.platform as Platform
 		const distinctId = PostHogClientProvider.getInstance().distinctId
 		const version = this.context.extension?.packageJSON?.version ?? ""
