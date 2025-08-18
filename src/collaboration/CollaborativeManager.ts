@@ -98,7 +98,8 @@ export class CollaborativeManager {
 
 		// Check for Docker-specific environment indicators
 		const isInDocker =
-			process.env.CODEWEAVER_INTERVIEW === "true" ||
+			process.env.CODEWEAVER_INTERVIEW_MODE === "true" ||
+			process.env.BLAZER_INTERVIEW_MODE === "true" ||
 			process.env.NODE_ENV === "interview" ||
 			process.env.CONTAINER === "docker" ||
 			require("fs").existsSync("/.dockerenv")

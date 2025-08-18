@@ -296,7 +296,7 @@ function createHandlerForProvider(
 			})
 		case "proxy":
 			return new ProxyHandler({
-				proxyUrl: options.proxyUrl || process.env.LLM_PROXY_URL || "http://management-server:5000/api/llm/chat",
+				proxyUrl: options.proxyUrl || process.env.LLM_PROXY_URL || "http://blazer-management-service:5000/api/llm/chat",
 				roomId: options.roomId || process.env.ROOM_ID,
 				authToken: options.authToken || process.env.CODEWEAVER_AUTH_TOKEN,
 			})

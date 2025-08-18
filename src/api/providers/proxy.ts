@@ -14,7 +14,7 @@ export class ProxyHandler implements ApiHandler {
 	private authToken?: string
 
 	constructor(options: ProxyHandlerOptions) {
-		this.proxyUrl = options.proxyUrl || "http://management-server:5000/api/llm/chat"
+		this.proxyUrl = options.proxyUrl || "http://blazer-management-service:5000/api/llm/chat"
 		this.roomId = options.roomId
 		this.authToken = options.authToken
 	}
@@ -22,19 +22,24 @@ export class ProxyHandler implements ApiHandler {
 	/**
 	 * Get auth token from environment or storage
 	 */
-	private getAuthToken(): string {
+	private getAuthToken(): string | undefined {
 		// Try to get auth token from various sources
 		if (this.authToken) {
 			return this.authToken
 		}
 
-		// In interview container, use environment variable
+		// Check for BLAZER_AUTH_TOKEN first (expected in interview container)
+		if (process.env.BLAZER_AUTH_TOKEN) {
+			return process.env.BLAZER_AUTH_TOKEN
+		}
+
+		// Fallback to CODEWEAVER_AUTH_TOKEN for compatibility
 		if (process.env.CODEWEAVER_AUTH_TOKEN) {
 			return process.env.CODEWEAVER_AUTH_TOKEN
 		}
 
-		// No fallback - authentication token is required
-		throw new Error("Authentication token is required. Set BLAZER_AUTH_TOKEN environment variable.")
+		// No auth token available - that's OK, the endpoint doesn't require it
+		return undefined
 	}
 
 	/**
@@ -128,14 +133,20 @@ export class ProxyHandler implements ApiHandler {
 		const roomId = this.getRoomId()
 
 		try {
+			const headers: Record<string, string> = {
+				"Content-Type": "application/json",
+				Accept: "text/event-stream",
+				"Cache-Control": "no-cache",
+			}
+
+			// Add auth header only if token is available
+			if (authToken) {
+				headers.Authorization = `Bearer ${authToken}`
+			}
+
 			const response = await fetch(this.proxyUrl, {
 				method: "POST",
-				headers: {
-					Authorization: `Bearer ${authToken}`,
-					"Content-Type": "application/json",
-					Accept: "text/event-stream",
-					"Cache-Control": "no-cache",
-				},
+				headers,
 				body: JSON.stringify({
 					roomId: roomId,
 					sessionId: null, // Will be populated by management server if needed

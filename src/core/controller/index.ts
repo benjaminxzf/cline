@@ -1238,7 +1238,7 @@ export class Controller {
 			console.log("[Controller] ====== SETTING UP INTERVIEW MODE PROXY ======")
 
 			// Get configuration from environment
-			const proxyUrl = process.env.LLM_PROXY_URL || "http://management-server:5000/api/llm/chat"
+			const proxyUrl = process.env.LLM_PROXY_URL || "http://blazer-management-service:5000/api/llm/chat"
 			const roomId = process.env.ROOM_ID
 			const authToken = process.env.CODEWEAVER_AUTH_TOKEN
 
