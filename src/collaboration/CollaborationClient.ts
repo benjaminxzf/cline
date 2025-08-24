@@ -423,6 +423,33 @@ export class CollaborationClient {
 		this.onRoomJoinedHandlers.push(handler)
 	}
 
+	// Interview transcript emission
+	emitToTranscript(type: string, data: any) {
+		console.log("[CollaborationClient] 📝 Emitting to interview transcript:", {
+			type,
+			hasData: !!data,
+			dataKeys: data ? Object.keys(data) : [],
+			timestamp: Date.now(),
+		})
+
+		if (!this.isConnected || !this.socket) {
+			console.warn("[CollaborationClient] ⚠️ Cannot emit to transcript - not connected")
+			return
+		}
+
+		try {
+			console.log("[CollaborationClient] 📤 Emitting interview:transcript event")
+			this.socket.emit("interview:transcript", {
+				type,
+				data,
+				timestamp: Date.now(),
+			})
+			console.log("[CollaborationClient] ✅ Transcript emission completed")
+		} catch (error) {
+			console.error("[CollaborationClient] 🔴 Error emitting to transcript:", error)
+		}
+	}
+
 	// Legacy methods for compatibility
 	onApprovalRequest(handler: (request: any) => void) {
 		console.warn("[CollaborationClient] Legacy onApprovalRequest called - functionality moved to ApprovalManager")

@@ -42,6 +42,11 @@ export class CollaborativeManager {
 	private readonly MAX_ERRORS_BEFORE_DISABLE = 5
 	private readonly ERROR_WINDOW_MS = 60000 // 1 minute window
 
+	// Deduplication for transcript emissions
+	private emittedMessageTimestamps = new Set<number>()
+	private readonly TIMESTAMP_CLEANUP_INTERVAL = 3600000 // 1 hour
+	private lastCleanupTime = Date.now()
+
 	private constructor() {
 		this.collaborationClient = new CollaborationClient()
 		this.diffManager = new CollaborativeDiffManager(this.collaborationClient)
@@ -313,6 +318,9 @@ export class CollaborativeManager {
 			messageContent: (message.text || "").substring(0, 100),
 		})
 
+		// Emit to interview transcript (regardless of collaboration state)
+		this.emitMessageToTranscript(message)
+
 		if (!this.isCollaborationActive()) {
 			console.log("[CollaborativeManager] Collaboration not active - skipping broadcast")
 			return
@@ -361,6 +369,74 @@ export class CollaborativeManager {
 			fromUserId: this.currentUserId,
 			fromUserName: this.getCurrentUserName(),
 		})
+	}
+
+	/**
+	 * Emit Cline message to interview transcript
+	 */
+	private emitMessageToTranscript(message: any): void {
+		// Cleanup old timestamps periodically
+		const now = Date.now()
+		if (now - this.lastCleanupTime > this.TIMESTAMP_CLEANUP_INTERVAL) {
+			const oneHourAgo = now - this.TIMESTAMP_CLEANUP_INTERVAL
+			const oldTimestamps = Array.from(this.emittedMessageTimestamps).filter((ts) => ts < oneHourAgo)
+			oldTimestamps.forEach((ts) => this.emittedMessageTimestamps.delete(ts))
+			this.lastCleanupTime = now
+			console.log(`[CollaborativeManager] Cleaned up ${oldTimestamps.length} old message timestamps`)
+		}
+
+		// Check for duplicate emission
+		const messageTimestamp = message.ts || Date.now()
+		if (this.emittedMessageTimestamps.has(messageTimestamp)) {
+			console.log("[CollaborativeManager] Skipping duplicate transcript emission for timestamp:", messageTimestamp)
+			return
+		}
+
+		// Add timestamp to deduplication set
+		this.emittedMessageTimestamps.add(messageTimestamp)
+
+		// Determine the transcript event type
+		let transcriptType: string
+		if (message.type === "ask") {
+			transcriptType = "cline_user_input"
+		} else if (message.type === "say") {
+			transcriptType = "cline_assistant_response"
+		} else {
+			console.log("[CollaborativeManager] Unknown message type for transcript:", message.type)
+			return
+		}
+
+		// Prepare the transcript data
+		const transcriptData = {
+			timestamp: messageTimestamp,
+			content: {
+				text: message.text,
+				say: message.say, // Contains tool type info (e.g., "tool", "command", etc.)
+				ask: message.ask, // Contains ask type (e.g., "followup", "tool", etc.)
+				images: message.images,
+				files: message.files,
+				reasoning: message.reasoning,
+				partial: message.partial,
+			},
+		}
+
+		// Log what we're emitting
+		console.log("[CollaborativeManager] Emitting to interview transcript:", {
+			type: transcriptType,
+			messageType: message.type,
+			say: message.say,
+			ask: message.ask,
+			hasText: !!message.text,
+			textPreview: message.text ? message.text.substring(0, 100) : null,
+			timestamp: messageTimestamp,
+		})
+
+		// Emit to transcript
+		try {
+			this.collaborationClient.emitToTranscript(transcriptType, transcriptData)
+		} catch (error) {
+			console.error("[CollaborativeManager] Failed to emit to transcript:", error)
+		}
 	}
 
 	/**
