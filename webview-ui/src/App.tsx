@@ -65,8 +65,8 @@ const AppContent = () => {
 			<ChatView
 				showHistoryView={navigateToHistory}
 				isHidden={showSettings || showHistory || showMcp}
-				showAnnouncement={showAnnouncement}
 				hideAnnouncement={hideAnnouncement}
+				showAnnouncement={showAnnouncement}
 			/>
 		</div>
 	)
