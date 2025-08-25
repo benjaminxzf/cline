@@ -470,6 +470,7 @@ export class Controller {
 			const terminalOutputLineLimit = this.cacheService.getGlobalStateKey("terminalOutputLineLimit")
 			const defaultTerminalProfile = this.cacheService.getGlobalStateKey("defaultTerminalProfile")
 			const enableCheckpointsSetting = this.cacheService.getGlobalStateKey("enableCheckpointsSetting")
+			const useAutoCondense = this.cacheService.getGlobalStateKey("useAutoCondense")
 
 			this.task = new Task(
 				this,
@@ -486,6 +487,7 @@ export class Controller {
 				openaiReasoningEffort,
 				mode,
 				strictPlanModeEnabled ?? false,
+				useAutoCondense ?? false,
 				shellIntegrationTimeout,
 				terminalReuseEnabled ?? true,
 				terminalOutputLineLimit ?? 500,

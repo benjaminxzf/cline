@@ -883,6 +883,11 @@ export class CacheService {
 			sapAiResourceGroup,
 			claudeCodePath,
 			qwenCodeOauthPath,
+			// Proxy configuration
+			proxyUrl: state.proxyUrl,
+			roomId: state.roomId,
+			authToken: state.authToken,
+			settingsLocked: state.settingsLocked,
 		} satisfies GlobalState
 
 		// Populate global state cache directly

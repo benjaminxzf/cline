@@ -1,4 +1,6 @@
 import * as vscode from "vscode"
+import { HostProvider } from "@/hosts/host-provider"
+import { ShowMessageType } from "@shared/proto/host/window"
 import { CollaborationClient } from "./CollaborationClient"
 import { CollaborativeDiffManager } from "./CollaborativeDiffManager"
 import { CollaborativeApprovalManager, ApprovalMode } from "./CollaborativeApprovalManager"
@@ -242,7 +244,10 @@ export class CollaborativeManager {
 
 			if (selected) {
 				this.approvalManager.setApprovalMode(selected.value)
-				vscode.window.showInformationMessage(`Approval mode set to: ${selected.label}`)
+				HostProvider.window.showMessage({
+					type: ShowMessageType.INFORMATION,
+					message: `Approval mode set to: ${selected.label}`,
+				})
 			}
 		})
 
@@ -276,9 +281,15 @@ export class CollaborativeManager {
         Participants: ${this.currentSession.participants.length}
         Status: ${this.currentSession.isActive ? "Active" : "Inactive"}
       `
-			vscode.window.showInformationMessage(info)
+			HostProvider.window.showMessage({
+				type: ShowMessageType.INFORMATION,
+				message: info,
+			})
 		} else {
-			vscode.window.showInformationMessage("No active collaborative session")
+			HostProvider.window.showMessage({
+				type: ShowMessageType.INFORMATION,
+				message: "No active collaborative session",
+			})
 		}
 	}
 
@@ -289,7 +300,10 @@ export class CollaborativeManager {
 		this.isCollaborationEnabled = !this.isCollaborationEnabled
 
 		const status = this.isCollaborationEnabled ? "enabled" : "disabled"
-		vscode.window.showInformationMessage(`Collaboration ${status}`)
+		HostProvider.window.showMessage({
+			type: ShowMessageType.INFORMATION,
+			message: `Collaboration ${status}`,
+		})
 	}
 
 	// ===== Integration Methods for Cline Core =====
